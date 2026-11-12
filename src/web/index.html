@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws://127.0.0.1:* ws://localhost:*; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Shoal</title>
+<link rel="stylesheet" href="/vendor/xterm.css">
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="/icon.png">
+</head>
+<body>
+<div class="drag-bar"></div>
+<div class="app">
+  <!-- Focus terminal -->
+  <main class="main">
+    <header class="focus-head" id="focusHead">
+      <div class="tile tile-lg" id="fEmoji">💬</div>
+      <div class="focus-meta">
+        <div class="focus-title" id="fTitle" title="Double-clic pour renommer" data-en-title="Double-click to rename">Nouvelle conversation</div>
+        <div class="focus-sub"><span class="pill" id="fState"></span><span class="dot-sep">·</span><span id="fCwd" class="mono"></span></div>
+      </div>
+      <div class="focus-ctx" id="fCtxWrap" hidden>
+        <span class="lbl" data-en="Context">Contexte</span>
+        <div class="meter"><i id="fCtxBar"></i></div>
+        <span class="num" id="fCtx">0 %</span>
+      </div>
+    </header>
+    <div class="setup" id="setup" hidden></div>
+    <section class="term-card">
+      <div class="terms" id="terms"></div>
+      <div class="drop-hint"><div><b data-en="Drop here">Dépose ici</b><span data-en="The image is attached to the current conversation">L'image est jointe à la conversation en cours</span></div></div>
+      <div class="empty" id="empty" hidden>
+        <div class="empty-icon">◆</div>
+        <h2 data-en="No open conversation">Aucune conversation ouverte</h2>
+        <p data-en="Start a Claude Code conversation to begin.">Lance une conversation Claude Code pour commencer.</p>
+        <button class="btn btn-primary" data-action="new" data-en="＋ New conversation">＋ Nouvelle conversation</button>
+      </div>
+    </section>
+    <div class="toasts" id="toasts"></div>
+  </main>
+
+  <!-- Right column -->
+  <aside class="side">
+    <div class="brand">
+      <img class="logo" id="logo" src="/icon.png" alt=""><span>Shoal</span>
+      <span class="kbd-hint">⌘K</span>
+      <button class="icon-btn" id="setBtn" title="Réglages (⌘,)" aria-label="Réglages" data-en-title="Settings (⌘,)" data-en-aria="Settings">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+
+    <div class="new-row">
+      <button class="btn btn-primary btn-new" data-action="new"><span class="plus">＋</span> <span data-en="New conversation">Nouvelle conversation</span></button>
+      <button class="btn btn-ghost btn-folder" id="folderBtn" title="Choisir le dossier" data-en-title="Choose folder">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+      </button>
+      <div class="menu" id="folderMenu" hidden></div>
+    </div>
+
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-tab="convs" role="tab"><span data-en="Conversations">Conversations</span> <span class="count" id="convCount">0</span></button>
+      <button class="tab" data-tab="hist" role="tab"><span data-en="History">Historique</span> <span class="count" id="histCount">0</span></button>
+    </div>
+    <div class="tagbar" id="tagBar" hidden></div>
+    <ul class="convs" id="convs"></ul>
+    <div class="hist" id="hist" hidden>
+      <input class="hist-search" id="histSearch" placeholder="Rechercher un sujet…" data-en-ph="Search a topic…" autocomplete="off">
+      <div class="hist-list" id="histList"></div>
+    </div>
+
+    <div class="cards">
+      <section class="card" id="usageCard">
+        <div class="card-head"><span data-en="Weekly limit">Limite de la semaine</span><span class="muted" id="uReset"></span></div>
+        <div class="big"><span id="uPct">—</span><small>%</small></div>
+        <div class="meter meter-lg"><i id="uBar"></i><span class="u-mark" id="uMark" hidden></span></div>
+        <div class="today-row" id="uToday"></div>
+        <div class="sub" id="u5h"></div>
+      </section>
+
+      <section class="card" id="prodCard">
+        <button class="prod-summary" id="prodSummary" aria-expanded="false">
+          <span class="ps-num"><b id="psSaved">0</b> h</span><span class="ps-lbl">économisées cette semaine</span><span class="ps-go" data-en="Details ›">Détails ›</span>
+        </button>
+        <div class="card-head">
+          <span class="wk-nav"><button id="wkPrev" aria-label="Semaine précédente" data-en-aria="Previous week">‹</button><span id="pWeek">Cette semaine</span><button id="wkNext" aria-label="Semaine suivante" data-en-aria="Next week">›</button></span>
+          <span class="muted" id="pCount"></span></div>
+        <div class="saved"><span class="big" id="pSaved">0</span><small>h</small><span class="saved-lbl" data-en="of work saved">de travail économisées</span>
+          <span class="info" id="pInfo" tabindex="0" aria-label="Méthode de calcul" data-en-aria="How it's calculated">?</span></div>
+        <div class="sub" id="pSub"></div>
+        <ul class="tasks" id="pTasks"></ul>
+        <button class="more" id="pMore" hidden></button>
+      </section>
+    </div>
+  </aside>
+</div>
+
+<div class="tooltip" id="tip" hidden></div>
+<div class="pop tag-menu" id="tagMenu" hidden></div>
+<div class="pop tag-edit" id="tagEdit" hidden></div>
+<div class="pop filter-menu" id="filterMenu" hidden></div>
+
+<div class="modal-back" id="setBack" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="setTitle">
+    <header class="modal-head">
+      <h2 id="setTitle" data-en="Settings">Réglages</h2>
+      <span class="saved-flag" id="setSaved" data-en="✓ Saved">✓ Enregistré</span>
+      <button class="icon-btn" id="setClose" aria-label="Fermer" title="Fermer (Échap)" data-en-aria="Close" data-en-title="Close (Esc)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </header>
+    <div class="modal-main"><nav class="modal-nav" id="setNav"></nav><div class="modal-body" id="setBody"></div></div>
+    <footer class="modal-foot mono" id="setStats"></footer>
+  </div>
+</div>
+
+<script src="/vendor/xterm.js"></script>
+<script src="/vendor/addon-fit.js"></script>
+<script src="/vendor/addon-unicode11.js"></script>
+<script src="/vendor/addon-web-links.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

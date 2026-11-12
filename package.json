@@ -1,0 +1,33 @@
+{
+  "name": "shoal",
+  "productName": "Shoal",
+  "version": "1.0.0",
+  "description": "A desktop workspace for running several Claude Code conversations side by side.",
+  "license": "MIT",
+  "private": true,
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "server": "node src/server/server.mjs",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/server/server.mjs && node --check src/web/app.js && python3 -m py_compile src/hooks/hook.py src/hooks/statusline.py",
+    "dist": "bash scripts/build-mac.sh"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-unicode11": "^0.9.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/xterm": "^6.0.0",
+    "node-pty": "^1.1.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "electron": "^45.3.1"
+  },
+  "homepage": "https://github.com/romainmourad/shoal",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/romainmourad/shoal.git"
+  },
+  "author": "Romain Mourad"
+}

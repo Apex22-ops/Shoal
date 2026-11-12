@@ -1,7 +1,12 @@
 // Shoal — interface
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const short = (p) => (p || "").replace(/^\/Users\/[^/]+/, "~");
+const short = (p) => (p || "").replace(/^(\/Users\/[^/]+|\/home\/[^/]+|[A-Z]:\\Users\\[^\\]+)/i, "~");
+// platform: shortcuts are ⌘ on macOS; on Windows/Linux Ctrl (+ Shift for letters, since Ctrl+K/J are terminal keys)
+const IS_MAC = window.shoal?.platform ? window.shoal.platform === "darwin" : /mac/i.test(navigator.platform || "");
+document.documentElement.classList.add(IS_MAC ? "is-mac" : "not-mac");
+const kbd = (k) => (IS_MAC ? "⌘" + k.toUpperCase() : /^[0-9]$/.test(k) ? "Ctrl+" + k : "Ctrl+Shift+" + k.toUpperCase());
+const isShortcut = (e) => (IS_MAC ? e.metaKey : e.ctrlKey && !e.altKey && (/^[0-9]$/.test(e.key) ? !e.shiftKey : e.shiftKey));
 // only touches the DOM if the content really changed (avoids rebuilding the list on every server message)
 const TOKEN = window.shoal?.token || ""; // given by the app (preload), never embedded in the page
 const setHTML = (el, html) => { if (el._h !== html) { el._h = html; el.innerHTML = html; } };
@@ -100,6 +105,7 @@ const TERM_THEMES = {
 const termTheme = () => TERM_THEMES[settings.theme] || TERM_THEMES.malachite;
 // apply the last theme before the server answers (no flash of the default theme)
 try { const th = localStorage.getItem("shoal.theme"); if (th && th !== "malachite") document.documentElement.dataset.theme = th; } catch {}
+try { document.documentElement.dataset.side = localStorage.getItem("shoal.side") || "right"; } catch {}
 
 
 function ensureTerm(id) {
@@ -120,7 +126,9 @@ function ensureTerm(id) {
   term.attachCustomKeyEventHandler((e) => {
     if (e.type !== "keydown") return true;
     if (e.key === "Enter" && e.shiftKey) { send({ t: "in", id, data: "\x1b\r" }); return false; } // newline in the prompt
-    if (e.metaKey && /^[1-9jk,]$/i.test(e.key)) return false; // handled by the global shortcut
+    if (isShortcut(e) && /^[1-9jk,]$/i.test(e.key)) return false; // handled by the global shortcut
+    // Windows / Linux: Ctrl+C copies when text is selected (otherwise it interrupts, as in any terminal)
+    if (!IS_MAC && e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === "c" && term.hasSelection()) { navigator.clipboard.writeText(term.getSelection()); term.clearSelection(); return false; }
     return true;
   });
   const t = { term, fit, el, pend: [], pendLen: 0, reset: false, stale: false };
@@ -299,7 +307,7 @@ function render() {
         <button class="btn btn-ghost" data-act="cancel">${L("Cancel", "Annuler")}</button>
         <button class="btn btn-danger" data-act="kill">${L("Close", "Fermer")}</button></div></li>`;
     }
-    return `<li class="${cls}" data-id="${s.id}" tabindex="0" title="⌘${i + 1}">
+    return `<li class="${cls}" data-id="${s.id}" tabindex="0" title="${kbd(String(i + 1))}">
       <div class="tile">${esc(s.emoji || "💬")}<span class="badge"></span></div>
       <div class="c-body">
         <div class="c-top"><span class="c-title ${s.named ? "" : "unnamed"}">${esc(s.title || L("New conversation", "Nouvelle conversation"))}</span><span class="c-meta"><span class="c-time">${ago(s.lastActivity)}</span>${tagPill(s.tag)}</span></div>
@@ -768,7 +776,7 @@ function handleShortcut(e) {
   if (e.key.toLowerCase() === "k") { send({ t: "new" }); return true; }
   return false;
 }
-document.addEventListener("keydown", (e) => { if (e.metaKey && handleShortcut(e)) e.preventDefault(); }, true);
+document.addEventListener("keydown", (e) => { if (isShortcut(e) && handleShortcut(e)) e.preventDefault(); }, true);
 
 // ---------------------------------------------------------------- pasted / dropped images
 async function attach(files) {
@@ -818,6 +826,9 @@ function translateStatic() {
     }
   }
 }
+// shortcut hints in the page follow the platform (before the first translation)
+$(".kbd-hint").textContent = kbd("k");
+for (const el of document.querySelectorAll("#setBtn")) { el.title = el.title.replace("⌘,", kbd(",")); el.dataset.enTitle = el.dataset.enTitle.replace("⌘,", kbd(",")); }
 translateStatic();
 
 // ---------------------------------------------------------------- settings (⚙ or ⌘,)
@@ -834,6 +845,8 @@ function applyTheme() {
 }
 function applySettings() {
   if (applySettings.theme !== settings.theme) { applySettings.theme = settings.theme; applyTheme(); }
+  const side = settings.sidebar === "left" ? "left" : "right";
+  if (document.documentElement.dataset.side !== side) { document.documentElement.dataset.side = side; try { localStorage.setItem("shoal.side", side); } catch {} requestAnimationFrame(fitActive); }
   const lang = settings.lang === "fr" ? "fr" : "en";
   if (lang !== LANG || !applySettings.done) {
     LANG = lang; applySettings.done = true;
@@ -855,18 +868,19 @@ const WD = () => LANG === "fr" ? [[1, "L"], [2, "M"], [3, "M"], [4, "J"], [5, "V
 const SETTINGS_UI = () => [
   { id: "appearance", title: L("Appearance", "Apparence"), rows: [
     { key: "theme", type: "themes", label: L("Theme", "Thème") },
+    { key: "sidebar", type: "seg", label: L("Sidebar position", "Position de la colonne"), desc: L("Conversations, weekly limit and hours saved", "Conversations, limite de la semaine et heures économisées"), options: [["left", L("Left", "Gauche")], ["right", L("Right", "Droite")]] },
     { key: "fontSize", type: "num", min: 10, max: 20, step: 1, unit: "px", label: L("Terminal text size", "Taille du texte du terminal") },
   ] },
   { id: "general", title: L("General", "Général"), rows: [
     { key: "lang", type: "seg", label: L("Language", "Langue"), options: [["en", "English"], ["fr", "Français"]] },
     { key: "tour", type: "action", label: L("Quick tour of the interface", "Visite rapide de l'interface"), button: L("Show", "Afficher") },
     { key: "keepRunning", type: "toggle", label: L("Keep conversations running after quitting", "Garder les conversations actives après avoir quitté"),
-      desc: L("Otherwise ⌘Q stops them; they are resumed at the next launch", "Sinon ⌘Q les arrête ; elles sont reprises au lancement suivant") },
+      desc: L(`Otherwise quitting Shoal${IS_MAC ? " (⌘Q)" : ""} stops them; they are resumed at the next launch`, `Sinon quitter Shoal${IS_MAC ? " (⌘Q)" : ""} les arrête ; elles sont reprises au lancement suivant`) },
   ] },
   { id: "notifications", title: "Notifications", rows: [
     { key: "notifyDone", type: "toggle", label: L("Conversation finished", "Conversation terminée"), desc: L("Alert when Claude is done and hands back to you", "Alerte quand Claude a fini et te rend la main") },
     { key: "notifyWaiting", type: "toggle", label: L("Question or permission", "Question ou autorisation"), desc: L("Alert when Claude is waiting for your reply or approval", "Alerte quand Claude attend ta réponse ou ton accord") },
-    { key: "systemNotif", type: "toggle", label: L("macOS notifications", "Notifications macOS"), desc: L("When Shoal isn't in the foreground", "Quand Shoal n'est pas au premier plan") },
+    { key: "systemNotif", type: "toggle", label: IS_MAC ? L("macOS notifications", "Notifications macOS") : L("System notifications", "Notifications système"), desc: L("When Shoal isn't in the foreground", "Quand Shoal n'est pas au premier plan") },
     { key: "sound", type: "toggle", label: L("Sound", "Son"), desc: L("A short chime with each alert", "Petit carillon avec chaque alerte") },
     { key: "badge", type: "seg", label: L("Dock badge", "Pastille du Dock"), desc: L("What the icon counts", "Ce qui est compté sur l'icône"),
       options: [["all", L("All", "Tout")], ["waiting", L("Waiting", "Attentes")], ["none", L("None", "Rien")]] },
@@ -906,7 +920,7 @@ const SETTINGS_UI = () => [
 const autoPreview = () => Math.max(1, Math.round((settings.weeklyTarget || 100) / Math.max(1, (settings.workdays || []).length)));
 
 // defaults (same as the server): a never-touched setting still shows as selected
-const SETTING_DEFAULTS = { theme: "malachite", lang: "en", keepRunning: false, importHistory: true, tags: [], autoTag: true, notifyDone: true, notifyWaiting: true, systemNotif: true, sound: true, badge: "all", showLimit: true, weeklyTarget: 100,
+const SETTING_DEFAULTS = { sidebar: "right", theme: "malachite", lang: "en", keepRunning: false, importHistory: true, tags: [], autoTag: true, notifyDone: true, notifyWaiting: true, systemNotif: true, sound: true, badge: "all", showLimit: true, weeklyTarget: 100,
   workdays: [1, 2, 3, 4, 5], dailyTarget: 0, warnAt: 80, overNotify: true, defaultCwd: "", defaultModel: "", autoName: true, fontSize: 13, scrollback: 5000, productivity: true };
 function control(r) {
   const v = r.key === "lang" ? LANG : settings[r.key] ?? SETTING_DEFAULTS[r.key];
@@ -1020,7 +1034,7 @@ $("#setBtn").addEventListener("click", (e) => { e.stopPropagation(); openSetting
 $("#setClose").addEventListener("click", () => openSettings(false));
 $("#setBack").addEventListener("mousedown", (e) => { if (e.target.id === "setBack") openSettings(false); });
 document.addEventListener("keydown", (e) => {
-  if (e.metaKey && e.key === ",") { e.preventDefault(); openSettings($("#setBack").hidden); }
+  if (isShortcut(e) && (e.key === "," || e.key === "<")) { e.preventDefault(); openSettings($("#setBack").hidden); }
   else if (e.key === "Escape" && !$("#setBack").hidden && tagEdit.hidden && tagMenu.hidden) { e.stopPropagation(); openSettings(false); }
 }, true);
 
@@ -1030,7 +1044,7 @@ const TOUR = () => [
   { sel: ".term-card", title: L("Your conversation", "Ta conversation"),
     text: L("The conversation you're working on, in large. It's the real Claude Code: type, paste or drop images here.", "La conversation sur laquelle tu travailles, en grand. C'est le vrai Claude Code : tape, colle ou dépose des images ici.") },
   { sel: ".new-row", title: L("New conversation", "Nouvelle conversation"),
-    text: L("Start as many as you need (⌘K). The folder button lets you pick where it starts.", "Lance-en autant que tu veux (⌘K). Le bouton dossier permet de choisir où elle démarre.") },
+    text: L(`Start as many as you need (${kbd("k")}). The folder button lets you pick where it starts.`, `Lance-en autant que tu veux (${kbd("k")}). Le bouton dossier permet de choisir où elle démarre.`) },
   { sel: "#convs", title: L("All your conversations", "Toutes tes conversations"),
     text: L("Each one gets an emoji and a title. You see at a glance which is working, done, or waiting for you. Hover a card to tag or close it.", "Chacune reçoit un emoji et un titre. Tu vois d'un coup d'œil laquelle travaille, a fini ou t'attend. Survole une carte pour la taguer ou la fermer.") },
   { sel: ".tabs", alsoSel: "#tagBar", title: L("History and tags", "Historique et tags"),
@@ -1040,7 +1054,7 @@ const TOUR = () => [
   { sel: "#prodCard", title: L("Hours saved", "Heures économisées"),
     text: L("An estimate of the work Claude did for you this week, task by task. Click the hours of a task to correct them.", "Une estimation du travail que Claude a fait pour toi cette semaine, tâche par tâche. Clique sur les heures d'une tâche pour les corriger.") },
   { sel: "#setBtn", title: L("Settings", "Réglages"),
-    text: L("Themes, tags, notifications, goals… everything is here (⌘,). You can replay this tour from there.", "Thèmes, tags, notifications, objectifs… tout est ici (⌘,). Tu peux relancer ce parcours depuis là.") },
+    text: L(`Themes, tags, notifications, goals… everything is here (${kbd(",")}). You can replay this tour from there.`, `Thèmes, tags, notifications, objectifs… tout est ici (${kbd(",")}). Tu peux relancer ce parcours depuis là.`) },
 ];
 let tourStep = -1, tourSteps = [];
 const tourEl = document.createElement("div");
@@ -1074,6 +1088,7 @@ function showTourStep() {
   const cw = 300, ch = card.offsetHeight || 170, m = 14;
   let x, y;
   if (box.left > innerWidth * 0.6) { x = box.left - pad - cw - m; y = Math.min(Math.max(12, box.top), innerHeight - ch - 12); }
+  else if (box.right < innerWidth * 0.4) { x = box.right + pad + m; y = Math.min(Math.max(12, box.top), innerHeight - ch - 12); } // sidebar on the left
   else if (box.bottom - box.top > innerHeight * 0.6) { x = box.left + (box.right - box.left - cw) / 2; y = box.top + (box.bottom - box.top - ch) / 2; }
   else { x = box.left; y = box.bottom + pad + m; }
   card.style.left = Math.max(12, Math.min(innerWidth - cw - 12, x)) + "px";

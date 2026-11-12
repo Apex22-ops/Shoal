@@ -8,6 +8,8 @@ const fs = require("fs");
 const { spawn } = require("child_process");
 
 app.setName("Shoal");
+const isMac = process.platform === "darwin";
+if (process.platform === "win32") app.setAppUserModelId("io.github.shoal"); // needed for Windows notifications
 if (process.env.SHOAL_DATA) app.setPath("userData", process.env.SHOAL_DATA); // separate profile (tests, several installs)
 if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
 
@@ -55,7 +57,7 @@ async function ensureServer() {
   fs.mkdirSync(DATA, { recursive: true });
   const log = fs.openSync(path.join(DATA, "server.log"), "a");
   const env = { ...process.env, ELECTRON_RUN_AS_NODE: "1", SHOAL_PORT: String(PORT), SHOAL_DATA: DATA };
-  const child = spawn(process.execPath, [SERVER], { cwd: app.getPath("home"), env, detached: true, stdio: ["ignore", log, log] });
+  const child = spawn(process.execPath, [SERVER], { cwd: app.getPath("home"), env, detached: true, stdio: ["ignore", log, log], windowsHide: true });
   child.unref();
   for (let i = 0; i < 100; i++) { const q = await probe(PORT); if (q && q.shoal) return; await wait(100); }
 }
@@ -69,7 +71,7 @@ function createWindow() {
     x: Math.round(wa.x + (wa.width - w) / 2), y: Math.round(wa.y + (wa.height - h) / 2),
     width: w, height: h, minWidth: Math.min(900, area.width), minHeight: Math.min(600, area.height),
     title: "Shoal", backgroundColor: ({ amethyst: "#0B0716", amber: "#0F0B05", dark: "#111214", light: "#F4F5F7", "malachite-light": "#EEF7F3", lavender: "#F5F2FB", "amber-light": "#FBF6EE" })[settings().theme] || "#030913",
-    titleBarStyle: "hiddenInset", trafficLightPosition: { x: 16, y: 12 },
+    ...(isMac ? { titleBarStyle: "hiddenInset", trafficLightPosition: { x: 16, y: 12 } } : { autoHideMenuBar: true }),
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false, zoomFactor: 1 },
   });
   win.loadURL(url());
@@ -78,8 +80,9 @@ function createWindow() {
   // Dock badge = number of conversations waiting (the page title starts with "(n)")
   win.on("page-title-updated", (e, title) => {
     e.preventDefault();
-    const m = title.match(/^\((\d+)\)/);
-    app.dock?.setBadge(m ? m[1] : "");
+    const m = title.match(/^\((\d+)\)/), n = m ? Number(m[1]) : 0;
+    if (isMac) app.dock?.setBadge(n ? String(n) : "");
+    else { app.setBadgeCount(n); if (n > (win.lastBadge || 0) && !win.isFocused()) win.flashFrame(true); win.lastBadge = n; } // Windows: blink in the taskbar
   });
   // links open in the browser, never inside the app
   win.webContents.setWindowOpenHandler(({ url: u }) => { if (/^https?:\/\//.test(u)) shell.openExternal(u); return { action: "deny" }; });
@@ -92,11 +95,12 @@ function createWindow() {
 }
 
 function buildMenu() {
-  const isMac = process.platform === "darwin";
+  const settingsItem = { label: "Settings…", accelerator: isMac ? "Cmd+," : "Ctrl+Shift+,", click: () => { win?.show(); win?.webContents.send("shoal:settings"); } };
   Menu.setApplicationMenu(Menu.buildFromTemplate([
+    ...(!isMac ? [{ label: "File", submenu: [settingsItem, { type: "separator" }, { label: "Quit Shoal", accelerator: "Ctrl+Q", click: () => app.quit() }] }] : []),
     ...(isMac ? [{ label: "Shoal", submenu: [
       { role: "about" }, { type: "separator" },
-      { label: "Settings…", accelerator: "Cmd+,", click: () => { win?.show(); win?.webContents.send("shoal:settings"); } },
+      settingsItem,
       { type: "separator" }, { role: "hide" }, { role: "hideOthers" }, { role: "unhide" }, { type: "separator" },
       { label: "Quit Shoal", accelerator: "Cmd+Q", click: () => app.quit() },
     ] }] : []),
@@ -113,6 +117,7 @@ ipcMain.on("shoal:focus", () => { if (!win) return; win.show(); win.focus(); app
 
 app.on("second-instance", () => { if (win) { win.show(); win.focus(); } });
 app.on("activate", () => { if (win) win.show(); });
+app.on("browser-window-focus", () => win?.flashFrame(false));
 // ⌘Q: stops the conversations too, unless "Keep conversations running after quitting" is on.
 // They are noted and resumed at the next launch either way.
 app.on("before-quit", async (e) => {

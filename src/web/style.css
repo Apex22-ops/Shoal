@@ -223,9 +223,9 @@ img.logo { width: 34px; height: 34px; margin: -4px; filter: drop-shadow(0 4px 10
 
 /* ---------------- dedicated app window ---------------- */
 .drag-bar { display: none; }
-.is-app .drag-bar { display: block; position: fixed; top: 0; left: 0; right: 0; height: 30px; -webkit-app-region: drag; z-index: 1; }
-.is-app .main { padding-top: 34px; }
-.is-app .side { padding-top: 34px; }
+.is-app.is-mac .drag-bar { display: block; position: fixed; top: 0; left: 0; right: 0; height: 30px; -webkit-app-region: drag; z-index: 1; }
+.is-app.is-mac .main { padding-top: 34px; }
+.is-app.is-mac .side { padding-top: 34px; }
 .is-app button, .is-app input, .is-app .conv, .is-app .h-item { -webkit-app-region: no-drag; }
 
 /* ---------------- daily limit ---------------- */
@@ -556,3 +556,10 @@ select.s-input { padding-right: 6px; }
 .tour-skip { margin-right: auto; font-size: 12.5px; color: var(--muted); }
 .tour-skip:hover { color: var(--text); }
 @media (prefers-reduced-motion: reduce) { .tour-hole, .tour-card { transition: none; } }
+
+/* sidebar on the left (Settings → Appearance) */
+:root[data-side="left"] .app { grid-template-columns: 340px minmax(0, 1fr); }
+:root[data-side="left"] .side { order: -1; }
+:root[data-side="left"] .main { padding: 14px 14px 14px 0; }
+:root[data-side="left"] #prodCard.open { right: auto; left: 14px; }
+:root[data-side="left"] .setup { margin-right: 0; }

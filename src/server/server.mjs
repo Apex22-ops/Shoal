@@ -21,13 +21,21 @@ const SRC = path.dirname(path.dirname(fileURLToPath(import.meta.url)));   // src
 const WEB = path.join(SRC, "web");
 const HOOKS = path.join(SRC, "hooks");
 const HOME = os.homedir();
-const DATA = process.env.SHOAL_DATA || (process.platform === "darwin" ? path.join(HOME, "Library/Application Support/Shoal") : path.join(HOME, ".shoal"));
+const WIN = process.platform === "win32";
+const DATA = process.env.SHOAL_DATA || (process.platform === "darwin" ? path.join(HOME, "Library/Application Support/Shoal")
+  : WIN ? path.join(process.env.APPDATA || path.join(HOME, "AppData/Roaming"), "Shoal") : path.join(HOME, ".shoal"));
 const UPLOADS = path.join(DATA, "uploads");
 const CLAUDE_SETTINGS = path.join(DATA, "claude-settings.json");
 // Default folder for new conversations. Claude Code never remembers folder trust for the home folder,
 // so a dedicated workspace avoids the "Do you trust this folder?" question on every new conversation.
 const WORKSPACE = path.join(HOME, "Shoal");
-const SHELL = process.env.SHELL && fs.existsSync(process.env.SHELL) ? process.env.SHELL : "/bin/zsh";
+// macOS / Linux: the user's login shell. Windows: PowerShell (Windows PowerShell 5.1 is always present; pwsh 7 if installed)
+const SHELL = WIN ? (whereSync("pwsh.exe") || "powershell.exe") : process.env.SHELL && fs.existsSync(process.env.SHELL) ? process.env.SHELL : "/bin/zsh";
+function whereSync(exe) {
+  if (!WIN) return "";
+  for (const dir of String(process.env.PATH || "").split(";")) { const p = path.join(dir, exe); try { if (dir && fs.existsSync(p)) return p; } catch {} }
+  return "";
+}
 fs.mkdirSync(UPLOADS, { recursive: true, mode: 0o700 });
 try { fs.chmodSync(DATA, 0o700); } catch {} // conversations titles, tasks, paths: readable by this user only
 // node-pty's helper sometimes loses its executable bit when an app is packaged or unzipped
@@ -46,7 +54,7 @@ const writeJSON = (f, v) => { const s = JSON.stringify(v, null, 1); if (written.
 
 // ---------- settings (⚙ panel in the UI): data/settings.json
 const DEFAULTS = {
-  lang: "en", theme: "malachite", keepRunning: false,
+  lang: "en", theme: "malachite", sidebar: "right", keepRunning: false,
   notifyDone: true, notifyWaiting: true, systemNotif: true, sound: true, badge: "all",
   showLimit: true, weeklyTarget: 100, workdays: [1, 2, 3, 4, 5], dailyTarget: 0, warnAt: 80, overNotify: true,
   defaultCwd: "", defaultModel: "", autoName: true,
@@ -59,6 +67,7 @@ function cleanSettings(raw = {}, base = DEFAULTS) {
   const s = { ...base };
   for (const k of ["autoTag", "importHistory", "keepRunning", "notifyDone", "notifyWaiting", "systemNotif", "sound", "showLimit", "overNotify", "autoName", "productivity"]) if (typeof raw[k] === "boolean") s[k] = raw[k];
   if (["en", "fr"].includes(raw.lang)) s.lang = raw.lang;
+  if (["left", "right"].includes(raw.sidebar)) s.sidebar = raw.sidebar;
   if (["malachite", "amethyst", "amber", "dark", "light", "malachite-light", "lavender", "amber-light"].includes(raw.theme)) s.theme = raw.theme;
   if (["all", "waiting", "none"].includes(raw.badge)) s.badge = raw.badge;
   if (raw.weeklyTarget != null) s.weeklyTarget = clamp(raw.weeklyTarget, 5, 100, s.weeklyTarget);
@@ -93,20 +102,32 @@ let recents = (readJSON("recents.json", null) || []).filter((d, i, a) => typeof 
 // ---------- environment: Claude Code and Python, found through the user's login shell
 // (an app started from the Dock gets a minimal PATH, while the terminal sees the user's real one)
 const env = { claude: "", python: "", checked: false };
+function checkPython(py, args, done) {
+  if (!py) return done("");
+  // macOS ships a /usr/bin/python3 stub (offers to install the Command Line Tools) and Windows a python.exe stub (opens the Store): check it really runs
+  execFile(py, [...args, "-c", "import sys; print(sys.version_info[0])"], { timeout: 10000, windowsHide: true }, (e, v = "") => done(!e && String(v).trim() === "3" ? py : ""));
+}
 function findTools() {
   return new Promise((resolve) => {
+    if (WIN) {
+      // Windows: PATH of the user (the app inherits it), plus the default install places
+      const local = process.env.LOCALAPPDATA || path.join(HOME, "AppData/Local");
+      env.claude = whereSync("claude.exe") || whereSync("claude.cmd") || [path.join(HOME, ".local/bin/claude.exe"), path.join(local, "Programs/claude/claude.exe")].find(fs.existsSync) || "";
+      const pyDirs = (() => { try { return fs.readdirSync(path.join(local, "Programs/Python")).map((d) => path.join(local, "Programs/Python", d, "python.exe")); } catch { return []; } })();
+      const candidates = [whereSync("py.exe") && [whereSync("py.exe"), ["-3"]], whereSync("python.exe") && [whereSync("python.exe"), []], ...pyDirs.filter(fs.existsSync).map((p) => [p, []])].filter(Boolean);
+      const next = () => {
+        const c = candidates.shift();
+        if (!c) { env.python = ""; env.pyArgs = []; env.checked = true; return resolve(); }
+        checkPython(c[0], c[1], (ok) => { if (ok) { env.python = ok; env.pyArgs = c[1]; env.checked = true; resolve(); } else next(); });
+      };
+      return next();
+    }
     execFile(SHELL, ["-lic", 'echo "SHOAL_CLAUDE=$(command -v claude)"; echo "SHOAL_PY=$(command -v python3)"'], { timeout: 15000, env: { ...process.env, SHOAL_INTERNAL: "1" } }, (_e, out = "") => {
       const pick = (k) => (String(out).match(new RegExp(`^${k}=(/.*)$`, "m")) || [])[1]?.trim() || "";
       const claudeGuess = [path.join(HOME, ".local/bin/claude"), path.join(HOME, ".claude/local/claude"), "/opt/homebrew/bin/claude", "/usr/local/bin/claude"].find(fs.existsSync);
       env.claude = pick("SHOAL_CLAUDE") || claudeGuess || "";
       const py = pick("SHOAL_PY") || ["/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/usr/bin/python3"].find(fs.existsSync) || "";
-      // macOS ships a /usr/bin/python3 stub that only offers to install the Command Line Tools: check it really runs
-      if (!py) { env.python = ""; env.checked = true; return resolve(); }
-      execFile(py, ["-c", "import sys; print(sys.version_info[0])"], { timeout: 10000 }, (e2, v = "") => {
-        env.python = !e2 && String(v).trim() === "3" ? py : "";
-        env.checked = true;
-        resolve();
-      });
+      checkPython(py, [], (ok) => { env.python = ok; env.pyArgs = []; env.checked = true; resolve(); });
     });
   });
 }
@@ -116,11 +137,13 @@ function findTools() {
 function writeClaudeSettings() {
   // without Python the hooks would fail on every tool call: write no hooks at all (the UI asks to install Python)
   if (env.checked && !env.python) { fs.writeFileSync(CLAUDE_SETTINGS, "{}\n"); return; }
-  const py = env.python || "python3";
-  const q = (p) => `'${p.replace(/'/g, "'\\''")}'`;
-  const hook = (ev) => [{ hooks: [{ type: "command", command: `${q(py)} -S ${q(path.join(HOOKS, "hook.py"))} ${ev}`, timeout: 5 }] }];
+  const py = env.python || (WIN ? "python" : "python3");
+  // POSIX: single quotes. Windows: double quotes and forward slashes (understood by cmd, PowerShell and Git Bash alike)
+  const q = WIN ? (p) => `"${p.replace(/\\/g, "/")}"` : (p) => `'${p.replace(/'/g, "'\\''")}'`;
+  const run = `${q(py)}${(env.pyArgs || []).map((a) => " " + a).join("")} -S`;
+  const hook = (ev) => [{ hooks: [{ type: "command", command: `${run} ${q(path.join(HOOKS, "hook.py"))} ${ev}`, timeout: 5 }] }];
   fs.writeFileSync(CLAUDE_SETTINGS, JSON.stringify({
-    statusLine: { type: "command", command: `${q(py)} -S ${q(path.join(HOOKS, "statusline.py"))}`, padding: 0, refreshInterval: 60 },
+    statusLine: { type: "command", command: `${run} ${q(path.join(HOOKS, "statusline.py"))}`, padding: 0, refreshInterval: 60 },
     hooks: { SessionStart: hook("start"), UserPromptSubmit: hook("prompt"), PreToolUse: hook("pretool"), PostToolUse: hook("tool"), Stop: hook("stop"), Notification: hook("notify") },
   }, null, 2));
 }
@@ -158,9 +181,16 @@ function createSession(cwd, resume, model, { remember = true } = {}) {
   const resumeArg = resume && UUID.test(resume.sid) ? ` --resume ${resume.sid}` : "";
   const id = crypto.randomBytes(6).toString("hex");
   const num = ++counter;
-  const claude = env.claude ? shq(env.claude) : "claude";
-  const cmd = `${claude} --settings ${shq(CLAUDE_SETTINGS)}${resumeArg}${model && /^[a-z0-9.\-[\]]+$/i.test(model) ? ` --model ${shq(model)}` : ""}; exec ${shq(SHELL)} -l`;
-  const term = pty.spawn(SHELL, ["-l", "-i", "-c", cmd], {
+  const modelArg = model && /^[a-z0-9.\-[\]]+$/i.test(model) ? model : "";
+  let file, args;
+  if (WIN) { // PowerShell: run claude, then stay in the shell (-NoExit) like on macOS
+    const ps = (x) => `'${String(x).replace(/'/g, "''")}'`;
+    file = SHELL; args = ["-NoLogo", "-NoExit", "-Command", `& ${ps(env.claude || "claude")} --settings ${ps(CLAUDE_SETTINGS)}${resumeArg}${modelArg ? ` --model ${ps(modelArg)}` : ""}`];
+  } else {
+    const claude = env.claude ? shq(env.claude) : "claude";
+    file = SHELL; args = ["-l", "-i", "-c", `${claude} --settings ${shq(CLAUDE_SETTINGS)}${resumeArg}${modelArg ? ` --model ${shq(modelArg)}` : ""}; exec ${shq(SHELL)} -l`];
+  }
+  const term = pty.spawn(file, args, {
     name: "xterm-256color", cols: 120, rows: 40, cwd,
     env: cleanEnv({ SHOAL_ID: id, SHOAL_PORT: String(PORT), SHOAL_TOKEN: TOKEN, SHOAL_DATA: DATA }),
   });
@@ -190,11 +220,13 @@ function createSession(cwd, resume, model, { remember = true } = {}) {
   return s;
 }
 
+// node-pty on Windows does not take a signal name (it throws): kill the process tree instead
+const killPty = (s, sig) => { try { WIN ? s.pty.kill() : s.pty.kill(sig); } catch {} };
 function closeSession(id) {
   const s = sessions.get(id);
   if (!s) return;
-  try { s.pty.kill("SIGHUP"); } catch {}
-  setTimeout(() => { if (sessions.has(id)) { try { s.pty.kill("SIGKILL"); } catch {} sessions.delete(id); broadcastState(); } }, 1500);
+  killPty(s, "SIGHUP");
+  setTimeout(() => { if (sessions.has(id)) { killPty(s, "SIGKILL"); sessions.delete(id); broadcastState(); } }, 1500);
 }
 
 // ---------- background Haiku calls (through the user's own Claude Code login)
@@ -205,7 +237,7 @@ function runHaiku(prompt, model = "haiku", effort, timeout = 90000) {
   return new Promise((resolve) => {
     if (!env.claude) return resolve("");
     const p = spawn(env.claude, ["-p", "--model", model, ...(effort ? ["--effort", effort] : []), ...HAIKU_ARGS],
-      { cwd: os.tmpdir(), env: cleanEnv({ SHOAL_INTERNAL: "1" }) });
+      { cwd: os.tmpdir(), env: cleanEnv({ SHOAL_INTERNAL: "1" }), windowsHide: true });
     let out = "";
     const timer = setTimeout(() => p.kill(), timeout);
     p.stdout.on("data", (d) => (out += d));
@@ -521,7 +553,7 @@ function importClaudeHistory(force = false) {
           if (!cwd && e.cwd) cwd = e.cwd;
           if (!first) { first = txt.replace(/\s+/g, " ").trim(); start = e.timestamp || ""; }
         }
-        if (prompts < 2 || !cwd || cwd.startsWith(tmp) || cwd.startsWith("/tmp") || cwd.startsWith("/private/")) continue;
+        if (prompts < 2 || !cwd || cwd.startsWith(tmp) || cwd.startsWith(os.tmpdir()) || cwd.startsWith("/tmp") || cwd.startsWith("/private/")) continue;
         found.push({ sid, cwd, emoji: "", title: (aiTitle || first).slice(0, 48), start: start || new Date(st.birthtimeMs).toISOString(), end: new Date(st.mtimeMs).toISOString(), prompts, source: "claude", first: first.slice(0, 300) });
       } catch {}
     }
@@ -817,7 +849,7 @@ function saveOpen() {
 }
 function shutdown() {
   try { saveOpen(); } catch {}
-  for (const s of sessions.values()) { try { s.pty.kill("SIGHUP"); } catch {} }
+  for (const s of sessions.values()) killPty(s, "SIGHUP");
   setTimeout(() => process.exit(0), 300);
 }
 for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, shutdown);

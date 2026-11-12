@@ -10,7 +10,9 @@
     "start": "electron .",
     "server": "node src/server/server.mjs",
     "check": "node --check src/main.js && node --check src/preload.js && node --check src/server/server.mjs && node --check src/web/app.js && python3 -m py_compile src/hooks/hook.py src/hooks/statusline.py",
-    "dist": "bash scripts/build-mac.sh"
+    "dist": "bash scripts/build-mac.sh",
+    "dist:mac": "bash scripts/build-mac.sh",
+    "dist:win": "node scripts/build-win.mjs"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",

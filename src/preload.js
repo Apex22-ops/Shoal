@@ -3,6 +3,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("shoal", {
   token: ipcRenderer.sendSync("shoal:token"),
+  platform: process.platform,
   focus: () => ipcRenderer.send("shoal:focus"),
   onOpenSettings: (cb) => ipcRenderer.on("shoal:settings", () => cb()),
   onTour: (cb) => ipcRenderer.on("shoal:tour", () => cb()),

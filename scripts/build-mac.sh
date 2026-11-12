@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 VERSION=$(node -p "require('./package.json').version")
-rm -rf dist
+rm -rf dist/Shoal-darwin-* dist/*-mac-*.zip
 for ARCH in ${ARCHS:-arm64 x64}; do
   npx @electron/packager . Shoal --platform=darwin --arch="$ARCH" --out=dist \
     --icon=build/icon.icns --app-bundle-id=io.github.shoal --app-version="$VERSION" \

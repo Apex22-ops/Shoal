@@ -22,13 +22,14 @@ Shoal does not replace Claude Code: every conversation **is** the real `claude` 
 
 ## Requirements
 
-- **macOS** 13 or later (Apple silicon or Intel).
+- **macOS** 13 or later (Apple silicon or Intel), or **Windows 10/11** (x64, *experimental*, see below).
 - **Claude Code**, installed and signed in once in a terminal:
   ```sh
   curl -fsSL https://claude.ai/install.sh | bash
   claude          # sign in, then quit with /exit
   ```
 - **Python 3** (used by the small scripts that tell Shoal what each conversation is doing). Either install it from [python.org](https://www.python.org/downloads/), or run `xcode-select --install`.
+- On Windows: Claude Code with its native installer (`irm https://claude.ai/install.ps1 | iex` in PowerShell, which needs [Git for Windows](https://git-scm.com/download/win)), and Python from [python.org](https://www.python.org/downloads/windows/) (tick **"Add python.exe to PATH"**).
 
 Nothing else: Shoal ships its own runtime, no Node.js needed.
 
@@ -41,6 +42,14 @@ Nothing else: Shoal ships its own runtime, no Node.js needed.
    - run this in a terminal: `xattr -dr com.apple.quarantine /Applications/Shoal.app`
 
 If something is missing (Claude Code or Python), Shoal tells you what to install and lets you check again.
+
+### Windows (experimental)
+
+1. Download `Shoal-<version>-win-x64.zip` from the [Releases](https://github.com/romainmourad/shoal/releases) page, unzip it anywhere (e.g. `C:\Users\you\Apps\Shoal`) and run **Shoal.exe**.
+2. The app is not code-signed, so Windows SmartScreen may warn on first launch: click **More info → Run anyway**.
+3. Conversations run in PowerShell. Shortcuts use **Ctrl** instead of ⌘ (Ctrl+Shift+K new conversation, Ctrl+1…9, Ctrl+Shift+J, Ctrl+Shift+, settings). Ctrl+C copies when text is selected.
+
+The Windows version is built and smoke-tested automatically on a Windows machine by GitHub Actions, but it has had little real-world use yet: please [open an issue](https://github.com/romainmourad/shoal/issues) if something doesn't work.
 
 ## Use
 
@@ -60,7 +69,7 @@ If something is missing (Claude Code or Python), Shoal tells you what to install
 
 ## Settings
 
-Appearance (theme, text size) · language · notifications (finished, waiting, macOS, sound, Dock badge) · weekly goal, working days, daily goal and warning threshold (or no weekly limit tracking at all, for plans without one) · default folder and model for new conversations · automatic emoji and title · terminal text size and memory · tags · history import · hours-saved tracking.
+Appearance (theme, sidebar on the left or right, text size) · language · notifications (finished, waiting, macOS, sound, Dock badge) · weekly goal, working days, daily goal and warning threshold (or no weekly limit tracking at all, for plans without one) · default folder and model for new conversations · automatic emoji and title · terminal text size and memory · tags · history import · hours-saved tracking.
 
 ## Privacy
 
@@ -100,7 +109,9 @@ Requires Node.js 20+.
 git clone https://github.com/romainmourad/shoal.git && cd shoal
 npm install
 npm start            # run in development
-npm run dist         # build dist/Shoal-<version>-mac-{arm64,x64}.zip
+npm run dist:mac     # build dist/Shoal-<version>-mac-{arm64,x64}.zip
+npm run dist:win     # build dist/Shoal-<version>-win-x64.zip
+node scripts/smoke.mjs   # start the server, open a real terminal, check it works
 ```
 
 `SHOAL_DATA=/some/folder SHOAL_PORT=4800 npm start` runs a separate instance with its own data, which is handy for development.
@@ -109,7 +120,7 @@ npm run dist         # build dist/Shoal-<version>-mac-{arm64,x64}.zip
 
 - **"Almost ready" banner**: Shoal could not find `claude` or `python3` through your login shell. Install the missing one, then click **Check again**.
 - **Statuses don't update** (a conversation stays "Working"): check that `python3 --version` works in a terminal, then close and reopen the conversation.
-- **Logs**: `~/Library/Application Support/Shoal/server.log`.
+- **Logs**: `~/Library/Application Support/Shoal/server.log` (Windows: `%APPDATA%\Shoal\server.log`).
 
 ## License
 

@@ -310,8 +310,8 @@ function render() {
     return `<li class="${cls}" data-id="${s.id}" tabindex="0" title="${kbd(String(i + 1))}">
       <div class="tile">${esc(s.emoji || "💬")}<span class="badge"></span></div>
       <div class="c-body">
-        <div class="c-top"><span class="c-title ${s.named ? "" : "unnamed"}">${esc(s.title || L("New conversation", "Nouvelle conversation"))}</span><span class="c-meta"><span class="c-time">${ago(s.lastActivity)}</span>${tagPill(s.tag)}</span></div>
-        <div class="c-sub">${subLine(s)}</div>
+        <div class="c-top"><span class="c-title ${s.named ? "" : "unnamed"}">${esc(s.title || L("New conversation", "Nouvelle conversation"))}</span><span class="c-meta"><span class="c-time">${ago(s.lastActivity)}</span></span></div>
+        <div class="c-row2"><div class="c-sub">${subLine(s)}</div><span class="c-meta">${tagPill(s.tag)}</span></div>
         ${isPerm(s) ? `<div class="c-perm mono" title="${esc(permText(s))}">${esc(permText(s))}</div>
           <div class="c-actions"><button class="btn btn-ghost btn-xs" data-act="deny">${L("Deny", "Refuser")}</button><button class="btn btn-primary btn-xs" data-act="allow">${L("Allow", "Autoriser")}</button></div>`
         : s.note && s.state !== "working" ? `<div class="c-note" title="${esc(s.note)}">${esc(s.note)}</div>` : ""}

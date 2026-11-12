@@ -26,10 +26,10 @@
     "@electron/packager": "^20.3.0",
     "electron": "^45.3.1"
   },
-  "homepage": "https://github.com/romainmourad/shoal",
+  "homepage": "https://github.com/romainmourad/Shoal",
   "repository": {
     "type": "git",
-    "url": "https://github.com/romainmourad/shoal.git"
+    "url": "https://github.com/romainmourad/Shoal.git"
   },
   "author": "Romain Mourad"
 }

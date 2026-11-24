@@ -145,12 +145,20 @@ function flushTerm(id) {
   if (!t || !isLive(id)) return;
   if (t.stale) { t.stale = false; send({ t: "sync", id }); return; }
   if (!t.pendLen && !t.reset) return;
+  const replay = t.reset;
   if (t.reset) { t.term.reset(); t.reset = false; }
   const data = t.pend.length === 1 ? t.pend[0] : t.pend.join("");
   t.pend = []; t.pendLen = 0;
-  t.term.write(data);
+  t.term.write(data, replay ? () => repaintFullScreen(id) : undefined);
 }
 document.addEventListener("visibilitychange", () => { if (!document.hidden) flushTerm(active); });
+// a replayed full-screen app only has the end of its output (the buffer is trimmed): ask it to redraw
+function repaintFullScreen(id) {
+  const t = terms.get(id);
+  if (!t || t.term.buffer.active.type !== "alternate" || t.term.rows < 6) return;
+  send({ t: "resize", id, cols: t.term.cols, rows: t.term.rows - 1 });
+  setTimeout(() => { const u = terms.get(id); if (u) send({ t: "resize", id, cols: u.term.cols, rows: u.term.rows }); }, 80);
+}
 
 function syncTerms() {
   const ids = new Set(sessions.map((s) => s.id));
